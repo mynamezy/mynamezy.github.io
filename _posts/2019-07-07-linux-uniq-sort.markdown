@@ -4,7 +4,7 @@ title: "利用uniq和sort指令，实现对文件的排序去重"
 subtitle: 'Using uniq and sort instructions to sort and de-duplicate files'
 author: "zy"
 header-img: "img/post-bg-unix-linux.jpg"
-header-mask: 0.4
+catalog: true
 tags:
   - Linux
 ---
