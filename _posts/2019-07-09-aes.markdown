@@ -1,0 +1,75 @@
+---
+layout: post
+title: "AES加解密的ruby和golang实现"
+subtitle: "AES in Ruby and Golang"
+author: "zy"
+header-img: "img/post-bg-lock.jpg"
+catalog: true
+tags:
+  - 安全
+  - Ruby
+  - Golang 
+---
+
+## 引言
+
+AES是目前最流行的分组对称加密算法，在开发的过程中，无处不在。Intel甚至在他们的芯片中定制了底层指令来让AES更快地执行，所以AES加解密过程算不算是一种系统调用？
+
+在这篇博客中，我们会先简单探究AES加解密的原理，然后对比ruby和golang的实现过程。
+
+
+## 产生的疑问
+
+AES加解密很常见, 但我们有时候仅仅是利用第三方库帮我们实现功能模块，有点不求甚解的意思。下面先列出一下疑问，顺着这些疑问，一步步去探索。
+
+ 1. 十六进制字符串是什么？
+ 2. AES究竟是如何分组的？
+ 3. CBC与IV是什么？
+ 4. AES填充（Padding）算法
+ 5. ruby和golang的代码实现
+ 6. AES与Base64之间的关系
+ 
+## 十六进制字符串
+
+顾名思义，这就是一个字符串：
+
+```string str = "00234AE2B" ```
+
+在我的日常工作中，时常要对接一些研发嵌入式开发的同事，难免会要使用二进制数据进行数据交换。这时候，我们会将这些**二进制数据**流转换为**十六进制的ASCII码**来表示，方便阅读和校验。
+
+现在我们分别用golang和ruby生成十六进制字符串：
+
+```
+## Golang implementation
+
+package main
+
+import (
+	"bytes"
+	"encoding/hex"
+	"fmt"
+)
+func main() {
+    src := []byte("Hello") 
+    encodedStr := hex.EncodeToString(src) //[]byte ---> string
+    fmt.Println(src) // [72 101 108 108 111], src为byte数组，Println输出的是‘Hello’的ASCII码表示
+    fmt.Println(encodedStr) // 48656c6c6f -> 48(4*16+8=72) 65(6*16+5=101) 6c 6c 6f
+   
+    key, _ := hex.DecodeString("ef3809cf2d5dc9253e0b4a27e4b67bbb") // 字符串转化为16进制数组，string ---> []bytes
+    fmt.Println(key) //[239 56 9 207 45 93 201 37 62 11 74 39 228 182 123 187], key 为byte 数组
+    fmt.Printf("[key test]: %x\n", key) //ef3809cf2d5dc9253e0b4a27e4b67bbb，
+}
+```
+ruby中Array#pack和String#unpack方法使我们可以很轻松地实现数组与二（多）进制字符串的转换。
+字符串"ef3809cf2d5dc9253e0b4a27e4b67bbb"的ASCII码数组表示为：[101, 102 ,51, 56, 48, 57, 99, 102, 50, 100, 53, 100, 99, 57, 50, 53, 51, 101, 48, 98, 52, 97, 50, 55, 101, 52, 98, 54, 55, 98, 98, 98]
+```
+temp1 = [101, 102 ,51, 56, 48, 57, 99, 102, 50, 100, 53, 100, 99, 57, 50, 53, 51, 101, 48, 98, 52, 97, 50, 55, 101, 52, 98, 54, 55, 98, 98, 98]
+temp1.pack("C*")   # ef3809cf2d5dc9253e0b4a27e4b67bbb ,C 代表的是 unsigned char
+temp2 = "ef3809cf2d5dc9253e0b4a27e4b67bbb"
+[temp2].pack("H*")  # 生成16进制的字符串, 在rails console 显示为乱码
+[temp2].pack("H*").unpack("H*")  # ef3809cf2d5dc9253e0b4a27e4b67bbb, 普通字符串
+```
+
+## AES是如何分组的？
+
+美国国家标准技术研究所在2001年发布了高级加密标准（AES）。AES是基于数据块的加密方式，即每次处理的数据是一块（16字节），当数据不是16字节的倍数时填充，这就是所谓的分组密码（区别于基于比特位的流密码），16字节是分组长度。
