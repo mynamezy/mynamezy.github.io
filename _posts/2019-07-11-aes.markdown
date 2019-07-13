@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "AES加解密的ruby和golang实现"
+title: "AES加密的golang和ruby实现"
 subtitle: "AES in Ruby and Golang"
 author: "zy"
 header-img: "img/post-bg-lock.jpg"
@@ -17,19 +17,18 @@ tags:
 
 AES是目前最流行的分组对称加密算法，在开发的过程中，无处不在。Intel甚至在他们的芯片中定制了底层指令来让AES更快地执行，所以AES加解密过程算不算是一种系统调用？
 
-在这篇博客中，我们会先简单探究AES加解密的原理，然后对比ruby和golang的实现过程。
+在这篇博文中，我们会先简单探究AES加密的原理，然后对比golang和ruby的实现过程。
 
 
 ## 产生的疑问
 
-AES加解密很常见, 但我们有时候仅仅是利用第三方库帮我们实现功能模块，有点不求甚解的意思。下面先列出一下疑问，顺着这些疑问，一步步去探索。
+AES加密很常见, 但我们有时候仅仅是利用第三方库帮我们实现功能模块，有点不求甚解的意思。下面先列出一下疑问，顺着这些疑问，一步步去探索。
 
  1. 十六进制字符串是什么？
  2. AES究竟是如何分组的？
- 3. CBC与IV是什么？
+ 3. ECB，CBC，IV是什么？
  4. AES填充（Padding）算法
- 5. ruby和golang的代码实现
- 6. AES与Base64之间的关系
+ 5. Golang和Ruby的代码实现
  
 ## 十六进制字符串
 
@@ -54,24 +53,124 @@ import (
 func main() {
     src := []byte("Hello") 
     encodedStr := hex.EncodeToString(src) //[]byte ---> string
-    fmt.Println(src) // [72 101 108 108 111], src为byte数组，Println输出的是‘Hello’的ASCII码表示
+    fmt.Println(src) // [72 101 108 108 111]
     fmt.Println(encodedStr) // 48656c6c6f -> 48(4*16+8=72) 65(6*16+5=101) 6c 6c 6f
    
-    key, _ := hex.DecodeString("ef3809cf2d5dc9253e0b4a27e4b67bbb") // 字符串转化为16进制数组，string ---> []bytes
-    fmt.Println(key) //[239 56 9 207 45 93 201 37 62 11 74 39 228 182 123 187], key 为byte 数组
-    fmt.Printf("[key test]: %x\n", key) //ef3809cf2d5dc9253e0b4a27e4b67bbb，
+    key, _ := hex.DecodeString("ef3809cf2d5dc9253e0b4a27e4b67bbb") // string ---> []bytes
+    fmt.Println(key) //[239 56 9 207 45 93 201 37 62 11 74 39 228 182 123 187]
+    fmt.Printf("[key test]: %x\n", key) //ef3809cf2d5dc9253e0b4a27e4b67bbb
 }
 ```
 ruby中Array#pack和String#unpack方法使我们可以很轻松地实现数组与二（多）进制字符串的转换。
-字符串"ef3809cf2d5dc9253e0b4a27e4b67bbb"的ASCII码数组表示为：[101, 102 ,51, 56, 48, 57, 99, 102, 50, 100, 53, 100, 99, 57, 50, 53, 51, 101, 48, 98, 52, 97, 50, 55, 101, 52, 98, 54, 55, 98, 98, 98]
 ```
+// Ruby implementation
 temp1 = [101, 102 ,51, 56, 48, 57, 99, 102, 50, 100, 53, 100, 99, 57, 50, 53, 51, 101, 48, 98, 52, 97, 50, 55, 101, 52, 98, 54, 55, 98, 98, 98]
 temp1.pack("C*")   # ef3809cf2d5dc9253e0b4a27e4b67bbb ,C 代表的是 unsigned char
 temp2 = "ef3809cf2d5dc9253e0b4a27e4b67bbb"
-[temp2].pack("H*")  # 生成16进制的字符串, 在rails console 显示为乱码
-[temp2].pack("H*").unpack("H*")  # ef3809cf2d5dc9253e0b4a27e4b67bbb, 普通字符串
+temp2.unpack("C*") # [101, 102, 51, 56, 48, 57, 99, 102, 50, 100, 53, 100, 99, 57, 50, 53, 51, 101, 48, 98, 52, 97, 50, 55, 101, 52, 98, 54, 55, 98, 98, 98]
 ```
 
 ## AES是如何分组的？
 
-美国国家标准技术研究所在2001年发布了高级加密标准（AES）。AES是基于数据块的加密方式，即每次处理的数据是一块（16字节），当数据不是16字节的倍数时填充，这就是所谓的分组密码（区别于基于比特位的流密码），16字节是分组长度。
+美国国家标准技术研究所在2001年发布了高级加密标准（AES）。AES是基于数据块的加密方式，即每次处理一块（16字节）数据，然后再把各加密块拼接成一条密文，这就是所谓的分组加密（区别于基于比特位的流加密）。当数据不是16字节的倍数时填充，16字节是分组长度。
+
+![](/img/in-post/post-aes-algo/post-aes-algo-01.png)
+
+AES根据使用的密码(密钥)位数，AES最常见的有3种方案，用以适应不同的场景要求，分别是AES-128、AES-192和AES-256。目前我们最常用的微信小程序使用的是AES-128。
+
+## ECB，CBC，IV是什么？
+
+下面是两种我们比较常见的分组加密模式，CBC是比ECB安全性更好的加密模式。
+
+**ECB**：是一种基础的加密方式，密文被分割成分组长度相等的块（不足补齐），然后单独一个个加密，一个个输出组成密文。相同的输入产生相同的输出。
+
+![](/img/in-post/post-aes-algo/post-aes-ecb.png)
+
+**CBC**：是一种循环模式，前一个分组的密文和当前分组的明文异或操作后再加密。相同的输入产生不同的输出，增加破译密文的难度。
+
+![](/img/in-post/post-aes-algo/post-aes-cbc.png)
+
+在CBC加密的过程中，初始向量IV就显得很重要。因为这个加密模式是链式的，后一块加密需要前一块密文块作为基础，所以第一块需要一个需要初始化向量IV做基础。
+
+## AES填充（Padding）算法
+
+AES支持支持多种填充：PKCS5Padding，ISO10126Padding，PaddingMode.Zeros ，PaddingMode.PKCS7。在这里，主要介绍一下PaddingMode.Zeros ，PaddingMode.PKCS7，因为这两种算法比较重要也比较常常见。
+
+PaddingMode.PKCS7就是16字节为一组，数据少几个就填充几个：
+
++ 数据： FF FF FF FF FF FF FF FF FF FF ## 10字节
++ 需要填充的数据：07 07 07 07 07 07 ## 6字节
++ 填充后的数据： FF FF FF FF FF FF FF FF FF FF 07 07 07 07 07 07
+
+PaddingMode.Zeros的填充方式更简单，就是在后面补充0。但是这里有一点值得**注意**，利用这种填充方法，当数据刚好是16字节时候，我们要继续往后填充16个字节：
+
++ 数据： 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f
++ Zeros填充：01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+
+## golang 和 ruby的代码实现
+
+下面的例子分别用golang和ruby实现了AES-128-CBC算法。
+
+```
+## Golang implementation
+
+package main
+
+import (
+   "bytes"
+   "crypto/aes"
+   "crypto/cipher"
+   "encoding/hex"
+   "fmt"
+)
+func Pad(src []byte)[]byte {
+	padding := aes.BlockSize - len(src)%aes.BlockSize
+	padtext := bytes.Repeat([]byte{0}, padding)
+	return append(src, padtext...)
+}
+func main(){
+    key, _ := hex.DecodeString("ef4809cf2d5dc9253e0b4a27e4b67bbb")  //随机生成的加密key
+    plaintext, _ := hex.DecodeString("000102030405060708090a0b0c0d0e0f10111213") // 加密数据
+    plaintext = Pad(plaintext) //数据填充, 这里使用的是PaddingMode.Zeros
+    if len(plaintext)%aes.BlockSize != 0 {
+    	panic("paintext unpacking")
+	}
+    block, err := aes.NewCipher(key)
+    if err != nil{
+    	panic(err)
+	}
+    iv, _ := hex.DecodeString("0a0b0c0d010204060b0a0d0c0f0f0f0f")
+    mode := cipher.NewCBCEncrypter(block,iv)	
+    cipher := make([]byte, len(plaintext))
+    mode.CryptBlocks(cipher, plaintext)
+    fmt.Printf("[Cipher]: %x\n", cipher)
+}    
+```
+
+```
+// Ruby implementation
+require 'open3'
+
+ iv = '0a0b0c0d010204060b0a0d0c0f0f0f0f'
+ msg = '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f'
+ key = 'ef4809cf2d5dc9253e0b4a27e4b67bbb'
+ aes = OpenSSL::Cipher::Cipher.new("AES-128-CBC")
+ aes.encrypt
+ aes.padding = 0
+ aes.iv = [iv].pack('H*')
+ aes.key = [key].pack('H*')
+ txt = aes.update([msg].pack('H*')) << aes.final
+ res = txt.unpack('H*')
+```
+
+## 总结
+刚开始了解AES算法的时候，也是被众多的数学概念绕得天旋地转。但是去繁就简，你会发现一些原理可以抽象和封装，变成一个应用层的黑盒呈现在你的面前，比如说文中的AES加密器。
+
+我们并不是密码学的专家，目前这个阶段并不需要深究一些数学上的实现。了解基本的原理，帮助我们实现快速开发就完事了。当然，这也是博文不够深入的地方。
+
+## 参考
+
+感谢互联网上众多乐于分享的回答者们，我实在是找不到链接了，原谅我。
+
+
+
