@@ -1,0 +1,199 @@
+---
+layout: post
+title: "PostgreSQL和PostGIS在LBS中的应用"
+subtitle: "excelent gis database"
+author: "zy"
+header-img: "img/post-bg-database.jpg"
+catalog: true
+tags:
+  - 数据库
+---
+
+> 水滴石穿。
+
+## 引言
+
+一线搬砖人员的学习总是业务需求驱动的。最近在做一个LBS的服务，终于见识到了postgis在地理信息方面的强大功能。可以简答描述一下需求：前端小哥将用户当前的地图框的经纬度信息发送给我（四个点），需要查询数据库中被包含在多边形中的点，并将点的相关信息返回前端展示。
+
+这个接口难点在于：数据库中的存量数据极大（千万级数据），查询时间不能太长，否则时延太高，会影响用户体验。我们设计的方案是实时请求，用户每次使用的参数几乎都不一样，缓存没有作用。
+
+PostGIS是PostgreSQL关系数据库的空间数据扩展插件，功能强悍，我们一起研究一下吧！
+
+## 课前准备
+
+postgis提供gis服务的插件，在课前了解基本的地理坐标知识体系也是非常重要的。
+
+##### 地理坐标系
+Geographic coordinate system直译为地理坐标系统，是以经纬度为地图的存储单位的。
+
+很明显，Geographic coordinate system是球面坐标系统。我们要将地球上的数字化信息存放到球面坐标系统上，如何进行操作呢？地球是一个不规则的椭球，如何将数据信息以科学的方法存放到椭球上？这必然要求我们找到这样的一个椭球体。这样的椭球体具有特点：可以量化计算的参数。具有长半轴，短半轴，偏心率。然而有了这个椭球体以后还不够，还需要一个大地基准面将这个椭球定位，这个地基面可以是D_Beijing_1954。
+
+##### 投影坐标系
+投影坐标系统，实质上便是平面坐标系统，其地图单位通常为米。投影坐标系的获得有以下两个条件：
+
+* 获得球面坐标
+* 转换过程（算法）
+
+简单来说， 要得到投影坐标就必须得有一个“拿来”投影的球面坐标，然后才能使用算法去投影！即每一个投影坐标系统都必须要求有Geographic Coordinate System参数。
+
+##### EPSP
+
+EPSP是一个组织的名称，它负责维护并发布坐标参照系统的数据集参数，以及坐标转换描述，该数据集被广泛接受并使用，通过一个Web发布平台进行分发，同时提供了微软Acess数据库的存储文件，通过SQL 脚本文件，mySQL, Oracle 和PostgreSQL等数据库也可使用。
+
+目前已有的椭球体，投影坐标系等不同组合都对应着不同的ID号，这个号在EPSG中被称为EPSG code，它代表特定的椭球体、单位、地理坐标系或投影坐标系等信息。EPSG对世界的每一个地方都制定了地图，但是由于座标系不同，所以地图也各不相同。
+
+##### GPS
+在世界地图方面，EPSG:4326是比较著名的一个，因为由美国主导的**GPS**系统就是在用它，它还有一个名气更大的别名叫作WGS84，WGS(World Geodetic System)是世界大地测量系统的意思，由于是1984年定义的，所以叫WGS84。
+
+我们的北斗系统使用的是国产的CGCS2000坐标系。CGCS2000的定义与WGS84实质一样。采用的参考椭球非常接近。在这片文章中，我们只讨论WGS84坐标系。
+
+##### WKT和WKB
+
+WKT是一种文本标记语言，用于表示矢量几何对象、空间参照系统及空间参照系统之间的转换。简单一点来说：WKT可以用于表示的几何对象：点，线，多边形，TIN（不规则三角网）及多面体。
+
+WKB就是WKT的二进制表示，便于数据传输和数据库存储，该格式由开放地理空间联盟(OGC)制定。
+
+## geometry和geography的比较
+在开始postgis的学习之前，我们还得稍微了解一下geometry和geography数据类型。
+
+##### geometry
+
+既能支持地理坐标系，又能支持平面坐标系。相比于geography，支持更多的函数，一些几何计算的代价更低。
+
+##### geography
+
+geography支持的函数略少，计算代价更高。但是对于跨度较大地域性的业务，就需要使用geography，因为它的精度不受制于区域。
+
+
+## postgis安装
+
+Homebrew 用户直接“brew install postgis” ，其他用户请到官网自行搜索。
+
+## 创建postgis插件
+
+进入你所需要是数据库,输入创建指令：
+
+```
+\c test
+
+CREATE EXTENSION postgis;
+CREATE EXTENSION postgis_topology;
+```
+
+查看结果：
+
+```
+test=# \dx
+                                         List of installed extensions
+       Name       | Version |   Schema   |                             Description
+------------------+---------+------------+---------------------------------------------------------------------
+ plpgsql          | 1.0     | pg_catalog | PL/pgSQL procedural language
+ postgis          | 2.5.2   | public     | PostGIS geometry, geography, and raster spatial types and functions
+ postgis_topology | 2.5.2   | topology   | PostGIS topology spatial types and functions
+(3 rows)
+```
+
+
+#### 
+
+
+
+## 创建geometry类型的数据
+
+首先我们来创建table: 
+```
+create table points{
+   uuid varchar(40),
+   count integer,
+   longitude numeric,
+   latitude numeric,
+   gis geometry
+};
+```
+其中， latitude, longitude 分别存入经纬度字段。gis是geometry类型，会根据经纬度，生成WBK数据。
+
+## 数据处理
+
+为了验证postgis的性能，我们起码要插入百万级的数据。至于插入的方法，就是各显神通了。我使用ruby处理了千万级数据的csv写入我本地的数据库中，不得不说，使用脚本语言处理数据，真是很方便。当然，如果只是简单的demo，我们只需要手动插入数据就好：
+
+```
+INSERT INTO points VALUES ('3cc62eb2-59d5-4aa6-8031-0b46c98396e9', 4, NULL, 39.123124, 116.324124);
+INSERT INTO points VALUES ('7c0dbb7e-99b1-4004-8467-8c3e4db6c420', 5, NULL, 40.123124, 117.324124);
+```
+然后是更新gis，需要注意的是，使用pg的字符串拼接符号||，POINT经纬度之间要留空格：
+```
+UPDATE points SET gis = ST_GeomFromText('POINT('||longitude||'  ' ||latitude')', 4326);
+```
+
+结果查询：
+
+```
+test=# SELECT gis,latitude,longitude FROM points WHERE uuid = '3cc62eb2-59d5-4aa6-8031-0b46c98396e9';
+
+                      gis                     | latitude  | longitude
+----------------------------------------------------+-----------+------------
+0101000020E610000025ADF886C28F43405E13D21A83D64F40 | 39.123124 | 116.324124
+
+```
+当然，我们还可以使用ST_AsText方法将WKB解读为我们可读的信息：
+
+```
+SELECT ST_AsText('010100000025ADF886C28F434051F69672BE145D40');
+          st_astext
+-----------------------------
+ POINT(39.123124 116.324124)
+(1 row)
+```
+
+## ST_Contains 和 ST_GeomFromText
+
+ST_GeomFromText可以将WKT转化为WKB，ST_Contains可以判断某个点是否被某个多边形包含（功能之一）。直接Google这些函数，都可以找到官方的文档，同学们可以自行搜索，或者在我下面参考链接中也可以找到。但是要注意的是，这些函数对参数的数据类型是有要求的，支持geometry的函数会更多一些。
+
+```
+SELECT * FROM "points" 
+WHERE "points"."deleted_at" IS NULL 
+AND ((ST_Contains(ST_GeomFromText('POLYGON((91.07887700103993 29.629498831161897, 91.16102326982917 29.629498831161897, 91.16102326982917 29.70472878306478, 91.07887700103993 29.70472878306478, 91.07887700103993 29.629498831161897))',4326), gis) IS TRUE ))
+ORDER BY count desc
+limit 2000; 
+```
+
+这时候问题出现了，查询2000W的数据，平均耗时达到12000ms，这是绝不能忍受的事情呀。
+
+## 添加索引
+
+机智的我开始添加索引，postgre中的索引众多：index，uniq_index，gist，gin。这里面学问还是很大的，后面一定要仔细学习一下。在这里最佳实践是使用的是gist：
+
+```
+CREATE INDEX uix_points_gis ON points USING gist(gis);
+```
+但是再次执行前面的查询，耗时还是很长，expalin之后发现索引根本没有生效。即使查询单个数据实例，耗时也特别长。
+
+```
+SELECT * FROM points WHERE gis = '010100000025ADF886C28F434051F69672BE145D40';
+```
+
+参考了一些使用手册，调整了sql。但是这个查询做了一些妥协，那就是要对ST_Contains返回的值做一个排序，然后limit前2000的数据实例，查询时间在100ms以内：
+
+```
+SELECT (ST_Contains(ST_GeomFromText('POLYGON((91.07887700103993 29.629498831161897, 91.16102326982917 29.629498831161897, 91.16102326982917 29.70472878306478, 91.07887700103993 29.70472878306478, 91.07887700103993 29.629498831161897))',4326), gis) IS TRUE ) as flag, id
+FROM points 
+ORDER BY ST_GeomFromText('POLYGON((91.07887700103993 29.629498831161897, 91.16102326982917 29.629498831161897, 91.16102326982917 29.70472878306478, 91.07887700103993 29.70472878306478, 91.07887700103993 29.629498831161897))',4326) <-> gis 
+LIMIT 2000;
+```
+
+检索了很多资料，还是没有找到为什么要这样使用，姑且留个坑，希望后面可以续上。
+
+## 总结
+
+其实这就是一个简单的接口，但是牵涉到的知识点还是挺多的，后面还会继续针对这个项目写一些博客。
+
+## 参考
+
+* [地理坐标系与投影坐标系的区别](https://www.cnblogs.com/wangzihao/archive/2010/09/22/1833049.html) 这是由专业的工作者完成的博客，对地理坐标系和投影坐标系的解释非常清晰
+* [EPSG、WKT、SRID概念](https://blog.csdn.net/gis0911178/article/details/80898658)
+* [基于postgresql和postgis纪录地理位置，计算距离](https://www.jianshu.com/p/386ba8755d3e) 一个使用postgis计算距离的例子，写得很详细
+* [索引问题](https://segmentfault.com/q/1010000002491458)
+* [ST_Contains使用的官网文档](https://postgis.net/docs/ST_Contains.html)
+* [geometry和geography的区别](https://yq.aliyun.com/articles/228281)
+* [为什么geometry+GIST 比 geohash+BTREE更适合空间搜索](https://yq.aliyun.com/articles/590349?spm=a2c4e.11153940.0.0.27d35a014FQfoV) 
+* [Postgres空间地理类型POINT POLYGON实现附近的定位和电子围栏功能](https://www.cnblogs.com/woshimrf/p/pg-point.html)

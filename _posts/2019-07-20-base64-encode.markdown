@@ -1,0 +1,17 @@
+---
+layout: post
+title: "Base64编码后出现换行符？"
+subtitle: "AES in Ruby and Golang"
+author: "zy"
+header-img: "img/post-bg-lock.jpg"
+catalog: true
+tags:
+  - 安全
+---
+
+
+## 引言
+
+这两天在开发的过程中，遇到了一个很神奇的情况，就是对一段二进制文件encode之后，竟然出现了换行符。在我的认知里面应该是不存在这种情况的。查阅了一些资料，在这里做一个总结。
+
+## 
