@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "Base64编码后出现换行符？"
-subtitle: "AES in Ruby and Golang"
+subtitle: "The newline character problem for base64 encoding"
 author: "zy"
 header-img: "img/post-bg-lock.jpg"
 catalog: true
@@ -9,9 +9,84 @@ tags:
   - 安全
 ---
 
+> 越长大，越注重细节。
 
 ## 引言
 
 这两天在开发的过程中，遇到了一个很神奇的情况，就是对一段二进制文件encode之后，竟然出现了换行符。在我的认知里面应该是不存在这种情况的。查阅了一些资料，在这里做一个总结。
 
-## 
+## Base64 原理
+Base64的加密方式是将三个八位的字节转化为四个六位的字节，不足八位的高位补0，3\*8 = 4\*6 ，所以经过base64加密的字符串大约比要比未加密的字符串要大三分之一。
+
+可用于base64编码的字符一共有64个：英文字母大小写52个，10个数字，连个特殊字符+ /。因为base64的有效位只有六位，可以表示的最大字符位数为64（2^6）。
+
+举个栗子，我们来对"ace"进行encode:
+
+```
+二进制表示：01100001‬ ‭01100011‬ ‭01100101
+转为为base64的四个字节（用六位表示）：011000 01‬‭0110 0011‬01 100101‬
+那因为计算机是一字节八位的存数，所以高位补00后变为：00011000 0001‬‭0110 000011‬01 00100101‬
+转化为十进制：24 22 13 37
+通过查ASCII表，我们得到最终结果：YWNl
+```
+## 在base64末尾的加等号
+
+上面的栗子中为了方便演示，我只取了三个字节的字符串。但是现实是残酷的，实际应用中会存在大量字节数量不是3的倍数的情况。所以将原ASCII码(每个字符8位)转换为转换为base编码字符，会存在两种情况:
+1. 剩余一个ASCII字符（余数为1），这时候要添加两个等号，这样就可以补足4个base64字节（24位）
+2. 同理，剩余两个ASCII字符（余数为2），这时候要添加一个等号
+
+## url encode
+标准的Base64并不适合直接放在URL里传输，因为URL编码器会把标准Base64中的“/”，“+”和“=”字符变为形如“%XX”的形式。
+
+为解决此问题，可采用一种用于URL的改进Base64编码：
+1. 在末尾去掉填充的’='号
+2. 将标准Base64中的“+”和“/”分别改成了“-”和“_”
+
+## 编码后出现换行符？
+
+以前没有注意过这个问题，所以出现换行符的时候也是比较懵逼，怀疑自己是不是哪一个步骤出现了问题。查阅了一些资料，得出的结论是：根据RFC822规定，BASE64 Encoder编码每76个字符，还需要加上一个换行符。这些回答者都是java的开发者， 说明可能部分做Base64编码的java库还按照这个标准执行。
+
+本着积极探索的态度，我决定使用ruby和golang去验证一下，看看是否还在使用这个标准。
+```
+## Ruby implementation
+Base64.encode64(["000102030405010508090a0b0c0d0e0f0e000102030405010508090a0b0c0d0e0f0e000102030405010508090a0b0c0d0e0f0e000102030405010508090a0b0c0d0e0f0e000102030405010508090a0b0c0d0e0f0e"].pack('H*'))
+=> "AAECAwQFAQUICQoLDA0ODw4AAQIDBAUBBQgJCgsMDQ4PDgABAgMEBQEFCAkK\nCwwNDg8OAAECAwQFAQUICQoLDA0ODw4AAQIDBAUBBQgJCgsMDQ4PDg==\n"
+```
+```
+## Golang implementation
+
+func main() {
+   writeString := "000102030405010508090a0b0c0d0e0f0e000102030405010508090a0b0c0d0e0f0e000102030405010508090a0b0c0d0e0f0e000102030405010508090a0b0c0d0e0f0e000102030405010508090a0b0c0d0e0f0e"
+   key, _ := hex.DecodeString(writeString)
+   decodeBytes := base64.StdEncoding.EncodeToString(key)
+   fmt.Println(decodeBytes) // AAECAwQFAQUICQoLDA0ODw4AAQIDBAUBBQgJCgsMDQ4PDgABAgMEBQEFCAkKCwwNDg8OAAECAwQFAQUICQoLDA0ODw4AAQIDBAUBBQgJCgsMDQ4PDg== 
+}
+```
+
+从执行的结果可以发现，ruby和golang的encode库并没有执行RFC822标准。ruby中每编码60个字符就要加上一个换行符，而golang的标准库干脆就不加换行符。这时有些同学可能会产生疑问：假如ruby的服务和golang服务之间进行数据交互，岂不是会报错？下面我们看看golang的标准库能不能解出带换行符的数据：
+
+```
+encodeString := "AAECAwQFAQUICQoLDA0ODw4AAQIDBAUBBQgJCgsMDQ4PDgABAgMEBQEFCAkK\nCwwNDg8OAAECAwQFAQUICQoLDA0ODw4AAQIDBAUBBQgJCgsMDQ4PDg==\n"
+decodeBytes, err := base64.StdEncoding.DecodeString(encodeString)
+if err != nil {
+	log.Fatalln(err)
+}
+fmt.Println(decodeBytes) ## [0 1 2 3 4 5 1 5 8 9 10 11 12 13 14 15 14 0 1 2 3 4 5 1 5 8 9 10 11 12 13 14 15 14 0 1 2 3 4 5 1 5 8 9 10 11 12 13 14 15 14 0 1 2 3 4 5 1 5 8 9 10 11 12 13 14 15 14 0 1 2 3 4 5 1 5 8 9 10 11 12 13 14 15 14]
+```
+代码执行之后，会打印一个byte数组，并没有报错。事实证明，这些标准库都会对换行符做预处理，这个结论也基本符合我们现在服务间交互的情况。
+
+## 总结
+以前对base64做过一些总结，就着这次机会再梳理一遍，加深印象。
+
+事实告诉我们，查阅百篇资料，不如动手实践一下。
+
+## 参考
+
+* [Base64加密原理](https://blog.csdn.net/zyhmz/article/details/85042646)
+* [golang实现base64编解码](https://www.cnblogs.com/unqiang/p/6677208.html)
+* [Base64编码出现换行符](https://blog.csdn.net/u010953266/article/details/52590570)
+
+
+
+
+
