@@ -35,12 +35,43 @@ Base64的加密方式是将三个八位的字节转化为四个六位的字节�
 1. 剩余一个ASCII字符（余数为1），这时候要添加两个等号，这样就可以补足4个base64字节（24位）
 2. 同理，剩余两个ASCII字符（余数为2），这时候要添加一个等号
 
-## url encode
+## url encode and decode
 标准的Base64并不适合直接放在URL里传输，因为URL编码器会把标准Base64中的“/”，“+”和“=”字符变为形如“%XX”的形式。
 
 为解决此问题，可采用一种用于URL的改进Base64编码：
-1. 在末尾去掉填充的’='号
+1. 在末尾去掉填充的’='号，去掉’='号的encode称为为URL Safe Base64
 2. 将标准Base64中的“+”和“/”分别改成了“-”和“_”
+
+```
+func Base64UrlSafeDecode(s string) []byte {
+	data, err := base64.RawURLEncoding.DecodeString(s)
+	if err != nil {
+		panic(err)
+	}
+	return data
+}
+
+func Base64UrlSafeEncode(src []byte) string {
+	data := base64.RawURLEncoding.EncodeToString(src)
+	return data
+}
+
+func Base64UrlDecode(s string) []byte {
+	data, err := base64.URLEncoding.DecodeString(s)
+	if err != nil {
+		panic(err)
+	}
+	return data
+}
+
+func Base64UrlEncode(src []byte) string {
+	data := base64.URLEncoding.EncodeToString(src)
+	return data
+}
+
+```
+
+
 
 ## 编码后出现换行符？
 
@@ -85,7 +116,7 @@ fmt.Println(decodeBytes) ## [0 1 2 3 4 5 1 5 8 9 10 11 12 13 14 15 14 0 1 2 3 4 
 * [Base64加密原理](https://blog.csdn.net/zyhmz/article/details/85042646)
 * [golang实现base64编解码](https://www.cnblogs.com/unqiang/p/6677208.html)
 * [Base64编码出现换行符](https://blog.csdn.net/u010953266/article/details/52590570)
-
+* [base64 前世今生](https://zhuanlan.zhihu.com/p/21250813)
 
 
 
