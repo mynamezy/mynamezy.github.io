@@ -38,9 +38,10 @@ Base64的加密方式是将三个八位的字节转化为四个六位的字节�
 ## url encode and decode
 标准的Base64并不适合直接放在URL里传输，因为URL编码器会把标准Base64中的“/”，“+”和“=”字符变为形如“%XX”的形式。
 
-为解决此问题，可采用一种用于URL的改进Base64编码：
-1. 在末尾去掉填充的’='号，去掉’='号的encode称为为URL Safe Base64
-2. 将标准Base64中的“+”和“/”分别改成了“-”和“_”
+为解决此问题，可采用一种用于URL传输的改进Base64编码：
+1. 将标准Base64中的“+”和“/”分别改成了“-”和“_”
+2. 在末尾去掉填充的’='号，去掉’='号的encode称为为URL-Safe-Base64。如果没有去掉"=", 就只是URL-Base64而已
+3. Golang是强类型的语言，URL-Safe-Base64和URL-Base64的使用是严格区分的。Ruby这种弱类型的语言，其库方法会兼容两种URL-encode的方式
 
 ```
 func Base64UrlSafeDecode(s string) []byte {

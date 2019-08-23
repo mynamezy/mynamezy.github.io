@@ -70,10 +70,10 @@ PaddingMode.PKCS7就是16字节为一组，数据少几个就填充几个：
 + 需要填充的数据：07 07 07 07 07 07 ## 6字节
 + 填充后的数据： FF FF FF FF FF FF FF FF FF FF 07 07 07 07 07 07
 
-PaddingMode.Zeros的填充方式更简单，就是在后面补充0。但是这里有一点值得**注意**，利用这种填充方法，当数据刚好是16字节时候，我们要继续往后填充16个字节：
+PaddingMode.Zeros的填充方式更简单，就是在后面补充0。但是这里有一点值得**注意**，利用这种填充方法，当数据刚好是16字节时候，我们不需要做填充操作：
 
-+ 数据： 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f
-+ Zeros填充：01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
++ 数据：00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f
++ Zeros填充：00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f
 
 ## golang 和 ruby的代码实现
 
@@ -91,15 +91,20 @@ import (
    "encoding/hex"
    "fmt"
 )
-func Pad(src []byte)[]byte {
-	padding := aes.BlockSize - len(src)%aes.BlockSize
-	padtext := bytes.Repeat([]byte{0}, padding)
-	return append(src, padtext...)
+func pad(src []byte) []byte {
+	if len(src)%aes.BlockSize == 0 {
+		return src
+	} else {
+		padding := aes.BlockSize - len(src)%aes.BlockSize
+		padData := bytes.Repeat([]byte{0}, padding)
+		return append(src, padData...)
+	}
 }
+
 func main(){
-    key, _ := hex.DecodeString("ef4809cf2d5dc9253e0b4a27e4b67bbb")  //随机生成的加密key
+    key, _ := hex.DecodeString("ef4809cf2d5dc9253e0b4a27e4b67bba")  //随机生成的加密key
     plaintext, _ := hex.DecodeString("000102030405060708090a0b0c0d0e0f10111213") // 加密数据
-    plaintext = Pad(plaintext) //数据填充, 这里使用的是PaddingMode.Zeros
+    plaintext = Pad(plaintext) //PaddingMode.Zeros
     if len(plaintext)%aes.BlockSize != 0 {
     	panic("paintext unpacking")
 	}
@@ -108,7 +113,7 @@ func main(){
     	panic(err)
 	}
     iv, _ := hex.DecodeString("0a0b0c0d010204060b0a0d0c0f0f0f0f")
-    mode := cipher.NewCBCEncrypter(block,iv)	
+    mode := cipher.NewCBCDecrypter(block,iv)	
     cipher := make([]byte, len(plaintext))
     mode.CryptBlocks(cipher, plaintext)
     fmt.Printf("[Cipher]: %x\n", cipher)
@@ -121,7 +126,7 @@ require 'open3'
 
  iv = '0a0b0c0d010204060b0a0d0c0f0f0f0f'
  msg = '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f'
- key = 'ef4809cf2d5dc9253e0b4a27e4b67bbb'
+ key = 'ef4809cf2d5dc9253e0b4a27e4b67bba'
  aes = OpenSSL::Cipher::Cipher.new("AES-128-CBC")
  aes.encrypt
  aes.padding = 0
