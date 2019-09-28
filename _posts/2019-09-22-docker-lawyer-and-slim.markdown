@@ -157,8 +157,8 @@ CMD ["./app"]
 
 ## 引用
 
-* [理解Docker镜像分层，这个老哥写得很好，就是排版有点乱](https://www.cnblogs.com/woshimrf/p/docker-container-lawyer.html)
-* 还有Lyle的博客，我实在是找不到了，下次补上吧
+* [理解Docker镜像分层（这个老哥写得很好，就是排版有点乱）](https://www.cnblogs.com/woshimrf/p/docker-container-lawyer.html)
+* 还有Lyle老师的博客，我实在是找不到了，下次补上吧
 
 
 
