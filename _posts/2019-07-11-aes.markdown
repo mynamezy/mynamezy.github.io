@@ -64,16 +64,18 @@ AES根据使用的密码(密钥)位数，AES最常见的有3种方案，用以�
 
 AES支持支持多种填充：PKCS5Padding，ISO10126Padding，PaddingMode.Zeros ，PaddingMode.PKCS7。在这里，主要介绍一下PaddingMode.Zeros ，PaddingMode.PKCS7，因为这两种算法比较重要也比较常常见。
 
-PaddingMode.PKCS7就是16字节为一组，数据少几个就填充几个：
+PaddingMode.PKCS7：假设数据长度需要填充n(n>0)个字节才对齐，那么填充n个字节，每个字节都是n;如果数据本身就已经对齐了，则填充一块长度为块大小的数据，每个字节都是块大小：
 
 + 数据： FF FF FF FF FF FF FF FF FF FF ## 10字节
-+ 需要填充的数据：07 07 07 07 07 07 ## 6字节
-+ 填充后的数据： FF FF FF FF FF FF FF FF FF FF 07 07 07 07 07 07
++ 需要填充的数据：06 06 06 06 06 06 ## 6字节
++ 填充后的数据： FF FF FF FF FF FF FF FF FF FF 06 06 06 06 06 06
 
-PaddingMode.Zeros的填充方式更简单，就是在后面补充0。但是这里有一点值得**注意**，利用这种填充方法，当数据刚好是16字节时候，我们不需要做填充操作：
+PaddingMode.Zeros：填充方式比较简单，就是在后面补充0。但是这里有一点值得**注意**，利用这种填充方法，当数据刚好是16字节时候，我们不需要做填充操作：
 
 + 数据：00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f
 + Zeros填充：00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f
+
+PKCS5Padding：PKCS7Padding的子集，块大小固定为8字节，具体例子就不展示了
 
 ## golang 和 ruby的代码实现
 
@@ -102,6 +104,7 @@ func pad(src []byte) []byte {
 }
 
 func main(){
+    // DecodeString可以帮助我们实现从hex string到[]byte的转换
     key, _ := hex.DecodeString("ef4809cf2d5dc9253e0b4a27e4b67bba")  //随机生成的加密key
     plaintext, _ := hex.DecodeString("000102030405060708090a0b0c0d0e0f10111213") // 加密数据
     plaintext = Pad(plaintext) //PaddingMode.Zeros

@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "七层负载均衡后的Remote Address 和 X-Forwarded-For"
-subtitle: ""
+subtitle: "Remote Address and X-Forwarded-For"
 author: "zy"
 header-img: "img/post-bg-os-metro.jpg"
 catalog: true
