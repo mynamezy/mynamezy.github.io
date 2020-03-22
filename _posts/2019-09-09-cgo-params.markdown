@@ -7,7 +7,7 @@ header-img: "img/post-bg-golang.jpg"
 catalog: true
 tags:
   - Golang
-  - C语言
+  - C/C++
 ---
 
 ## 引言

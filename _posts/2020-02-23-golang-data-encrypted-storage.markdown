@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "利用自定义类型和gorm回调对数据库数据进行加密"
+title: "利用自定义类型和gorm回调对数据库数据进行加密（TO DO）"
 subtitle: "custom type in gorm"
 author: "zy"
 header-img: "img/post-bg-golang.jpg"

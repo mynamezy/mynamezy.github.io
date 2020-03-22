@@ -7,7 +7,7 @@ header-img: "img/post-bg-golang.jpg"
 catalog: true
 tags:
   - Golang
-  - C语言
+  - C/C++
 ---
 
 > 不会c的程序员，不是好的程序员
