@@ -1,0 +1,174 @@
+---
+layout: post
+title: "golang的包管理工具(2)：go module的使用"
+subtitle: "go module"
+author: "zy"
+header-img: "img/post-bg-golang.jpg"
+catalog: true
+tags:
+  - Golang
+---
+
+> 武汉加油，中国加油！
+
+## 引言
+在上一篇博文中，我们对GOPATH和vendor的特性进行了回顾。现在，我们来看看主流的包管理方式：go module。
+
+## go module是什么
+
+Golang在诞生之初就一直有个被诟病的问题，缺少一个行之有效的官方包依赖管理工具。其原因是在Google内部，所有人都是在同一个代码库上进行开发，因此并不是非常需要。但是当Golang变成一个社区化的工程语言之后， GOPATH的问题就被放大了：
+1. GOPATH不符合一般开发者的习惯，大部分人更习惯maven, node modules这种包管理的方式
+2. GOPATH无法有效地管理版本依赖
+
+后来Golang 1.5发布了vendor特性，社区在vendor的基础上开发了很多包管理的工具，例如glide, dep，但都不是太令人满意。直到go mod的出现，江湖上纷争才算是统一了。
+
+vendor这个特性有点有类似于前端的node modules，前端的包管理还是比较混乱的。一个普通的web前端，其node modules往往非常巨大，而且不同的工程可能会有不同的node modules。一份node modules里面可能有成千上万个文件，常常造成IDE挂死，非常浪费硬盘。那么，vendor是不是到后期也会变成这样呢？同样的库，同样的版本，就因为在不同的工程。就得在vendor里面copy一份。所有基于vendor属性的golang管理工具，后期都会有这个问题。
+
+相比之下，maven这种本地缓存库的管理方式就好很多，Golang在1.11版本之后引入的go.mod, 其思想就是类似于maven, 摒弃vendor和GOPATH, 拥抱本地库。
+
+## go module的初始化
+
+go mod是在golang 1.11版本引入的，在1.11版本中需要将环境变量"GO111MODULE"置为on，才可以是使用go mod。1.11以后的golang会默认使用go mod。
+
+modules和传统的GOPATH不一样，其开发的源代码不需要放置在GOPATH的路径下，甚至是空的目录都可以作为modules, 只要其中包含有go.mod文件。但值得注意的是，并不是说我们的GOPATH不需要使用了，使用go mod下拉下来的包都会存放子$GOPATH/pkg/mod的路径里面。
+
+要初始化modules, 需要使用如下指令：
+```
+go mod init [project name]
+```
+加入说我们的project叫test_project, 所以这条指令就是：
+```
+go mod init test
+```
+初始化完成后会在目录下面生成一个go.mod文件，里面的内容只有一行"module test"。
+
+## 包管理
+
+那我们怎么使用包管理呢？很简单，当我们使用go build, go test, go list的时，go会自动更新go.mod和go.sum文件，并将依赖关系写入其中。
+
+如果我们想手动处理依赖关系，可以在根目录下输入一下指令。这条命令会自动更新依赖关系，并且将包下载放入cache：
+
+```
+go mod tidy
+```
+运行完之后，我们就可以得到新的的go.mod和go.sum文件了。这里面存放了我们直接引用的package和它们自身需要依赖包的版本记录，go module就是根据这些去寻找需要的package的。当然，go.mod和go.sum这两个文件还是有深挖的地方的，后面再来阐述。
+
+#### go mod tidy 和 go mod download的区别
+
+```
+download    download modules to local cache (下载依赖的module到本地cache))
+tidy        add missing and remove unused modules (增加缺失的module，去掉未用的module)
+```
+我们在日常的使用中可能经常混用这两个指令，从官方的解释可以看出，tidy明显是更智能的指令。tidy会根据package import的情况，自动添加缺失的包和去掉没有使用的包。download只是单纯地根据go.mod中包去下载对应的依赖。
+
+但这两条指令也是有共性的地方的，那就是他们都会更新go.sum，并在下载包的时候 verify checksum。
+
+
+## 包的版本控制
+
+#### go edit 进行包管理
+
+解决了golang中包的下载问题，接下来我们就应该来看看go mod是怎么进行版本控制的。在介绍版本控制之前，我们要首先明确一点，如果上层目录和下层目录有着同样的package规则，那么上层目录将无条件的覆盖下层目录，目的是为了源代码的构建不会被所依赖package影响。
+
+我们来看看go.mod长什么样子：
+
+```
+module test
+require github.com/chromedp/chromedp v0.1.2
+```
+如果有多个依赖，可以写成这样：
+```
+module github.com/chromedp/chromedp
+
+require (
+	github.com/chromedp/cdproto v0.0.0-20180713053126-e314dc107013
+	github.com/disintegration/imaging v1.4.2
+	github.com/gorilla/websocket v1.2.0
+	github.com/knq/sysutil v0.0.0-20180306023629-0218e141a794
+	github.com/mailru/easyjson v0.0.0-20180606163543-3fdea8d05856
+	golang.org/x/image v0.0.0-20180708004352-c73c2afc3b81 // indirect
+)
+```
+前面部分是包的名字，也就是import时需要写的部分，而空格之后的是版本号，版本号遵循如下规律:
+
+```
+vX.Y.Z-pre.0.yyyymmddhhmmss-abcdefabcdef
+vX.0.0-yyyymmddhhmmss-abcdefabcdef
+vX.Y.(Z+1)-0.yyyymmddhhmmss-abcdefabcdef
+vX.Y.Z
+```
+也就是版本号+时间戳+hash，我们自己指定版本时只需要制定版本号即可，没有版本tag的则需要找到对应commit的时间和hash值。针对版本号，这里先做一个简单的描述，下篇博文再展开来说。
+
+indirect的意思是指这个package被子module/package依赖了，但是main module并没有直接import使用，也就是所谓的间接引用。
+
+现在我们要修改依赖关系了，我们想使用chromedp 的v0.1.0版本，我们只需要使用如下命令, @后面加上你需要的版本号：
+```
+go mod edit -require="github.com/chromedp/chromedp@v0.1.0"
+```
+go.mod已经修改了：
+```
+module test
+
+require github.com/chromedp/chromedp v0.1.0
+```
+#### go get 进行包管理
+
+上面我们使用了go edit来修改go.mod, 然而它有两个缺陷：
+
+1. 首先是它的require必须接受"package@version"这种形式，缺一不可，而且不能识别文档规定的master和latest标志
+2. 其次是edit只适用于修改依赖版本，给package改名，屏蔽特定package这三个功能，不适用于添加依赖
+
+go get提供了在modules中添加/修改/更新package的能力，我们来看看版本选择的规则：
+
+1. go get会自动下载并安装package, 并更新到go.mod和go.sum中
+2. 可以使用go get package[@version]来安装指定版本的package，不指定version时默认行为和go get package@latest一样
+3. 当version是latest时，也就是默认行为，对于有tags的package，会选取最新的tag，对于没有tags的package，则选取最新的commit
+3. version可以是vx.y.z这种形式或者直接使用commit的checksum，也可以使用分支名。当version是master时，不管package有没有打tag, 都会选择master分支的最新commit,比如：go get github.com/chromedp/chromedp@master
+4. go get -u可以更新package到latest版本
+
+如果我们想要添加额外的包呢? 直接使用下面指令就可以取到latest版本：
+
+```
+go get github.com/jinzhu/gorm
+```
+更新后的更新后的go.mod为：
+
+```
+module schanclient
+
+require (
+	github.com/PuerkitoBio/goquery v1.4.1
+	github.com/andybalholm/cascadia v1.0.0 // indirect
+	github.com/chromedp/chromedp v0.1.3-0.20180717231922-bf52fed0d3e6
+	github.com/jinzhu/gorm v1.9.1 // indirect
+	github.com/jinzhu/inflection v0.0.0-20180308033659-04140366298a // indirect
+	golang.org/x/net v0.0.0-20180826012351-8a410e7b638d // indirect
+)
+```
+如果我们想使用v1.9的gorm:
+
+```
+go get github.com/jinzhu/gorm@v1.9
+```
+很遗憾，版本的选择是从大到小的顺序的。比如说有v1.9和v1.9.1, 那么当你指定v1.9时会自动选择小版本号中最高的版本，除非除了1.9之外没有的v1.9.z的tag存在，在这里就是v1.9.1。
+
+## 总结
+
+1. 这一节中，我们简单地熟悉了go mod的使用方法，其实已经可以基本满足日常的需求
+2. 但是还有很多细节我们没有搞清楚，比如说tag版本的定义，go.sum的使用等
+
+## 引用
+* [go mod 的使用](https://blog.csdn.net/fanhenghui/article/details/93712042)
+* [在go modules里使用go get进行包管理](https://www.cnblogs.com/apocelipes/p/9537659.html)
+
+
+
+
+
+
+
+
+
+
+
+
