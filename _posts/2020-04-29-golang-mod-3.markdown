@@ -1,0 +1,90 @@
+---
+layout: post
+title: "golang的包管理工具(3)：go mod的语义化版本号"
+subtitle: "go module version"
+author: "zy"
+header-img: "img/post-bg-golang.jpg"
+catalog: true
+tags:
+  - Golang
+---
+
+## 引言
+在上一节中，我们已经学会了怎么去使用go mod，也特别说明了如何使用go get进行包管理, 可以使用commit的hash来指定版本，如下：
+
+```
+# 使用go get时
+go get github.com/mqu/go-notify@ef6f6f49
+
+# 在go.mod中指定
+module my-module
+
+require (
+  // other packages
+  github.com/mqu/go-notify ef6f6f49
+)
+```
+
+随后我们运行go build或go mod tidy，这两条命令会整理并更新go.mod文件，更新后的文件会是这样：
+
+```
+module my-module
+
+require (
+	github.com/mattn/go-gtk v0.0.0-20181205025739-e9a6766929f6 // indirect
+	github.com/mqu/go-notify v0.0.0-20130719194048-ef6f6f49d093
+)
+```
+hash的信息会自动扩充成了符合要求的版本信息，这个hash的值至少需要8位。和git工具不同，hash值少于8位会导致go mod无法找到包的对应版本。但是这里和我们理想中的版本控制方式有一些出入，因为hash值不是很直观，所以我们下面来介绍一下语义化版本号。
+
+## 语义化版本
+
+golang官方推荐的最佳实践叫"semver"，这是一个简称，全称就是"Semantic Versioning"，也就是语义化的版本。
+
+那什么是语义化版本号呢？简单一点来说就是一种清晰可读的，明确反应版本信息的版本格式。go mod的版本号规则的格式为：
+
+```
+vMAJOR.MINOR.PATCH
+```
+![](/img/in-post/post-golang-mod/golang-semver.png)
+
+* MAJOR 主版本号，如果有大的版本更新，导致API和之前版本不兼容，就需要升级主版本号
+* MINOR 次版本号，用于向下兼容的新feature
+* PATCH 修订版本号，用于向下兼容的bug fix
+
+比如说我们现在使用的go语言，为1.14.0，目前还是go 1, 确定每次升级都保证是向下兼容的。12的版本号是新的feature，而最末尾的版本号为0，说明新的feature上了之后还没有修复过问题。
+
+##### 先行版本号
+
+先行版本号主要用于一些测试的版本，被称为先行版本号。先行版本号可以（MAY）被标注在PATCH版本之后，先加上一个连接号再加上一连串以句点分隔的标识符来修饰。标识符必须（MUST）由 ASCII 字母数字和连接号 [0-9A-Za-z-] 组成，且禁止（MUST NOT）留白。数字型的标识符禁止（MUST NOT）在前方补零。例如：1.0.0-alpha、1.0.0-alpha.1、1.0.0-0.3.7、1.0.0-x.7.z.92。最近在项目中使用了两个先行版本号：v0.1.3-beta1.0.20200306102715-3f56146cb54a，v0.0.1-beta7。
+
+##### 没有使用go mod的项目
+
+因为go mod也是最近的版本才开始使用，那以前一些旧的项目怎么办呢？这是就需要使用不兼容的标记了。如果某个依赖包没有没有打tag, go mod中会使用v0.0.0+incompatible来标记，并拉取最新的master分支。如果依赖包中打了tag, 则标记为v3.2.1+incompatible。
+
+##### 使用了go mod, 但是没有使用tag
+
+对于没有打tag的仓库对于没有打 tag 的仓库，go.mod 就会很丑陋，它的格式是pseudo-version, 格式为v0.0.0-yyyymmddhhmmss-abcdefabcdef，拉取是最新的commit。
+
+## 总结
+
+1. 语义化版本还有很多规则，在这里只是粗略描述，想深入了解的同学们可以看[语义化版本 2.0.0](https://semver.org/lang/zh-CN/)
+2. 我们还总结几个比较容易混淆的版本使用方式，分别为 a.先行版本号 b.没有使用go mod的项目 c.使用了go mod, 但是没有使用tag
+
+## 引用
+
+* [Go module 如何发布 v2 及以上版本？](https://blog.cyeam.com/go/2019/03/12/go-version)
+* [再探go modules：使用与细节](https://www.cnblogs.com/apocelipes/p/10295096.html)
+
+
+
+
+
+
+
+ 
+
+
+
+
+

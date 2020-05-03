@@ -123,7 +123,7 @@ go get提供了在modules中添加/修改/更新package的能力，我们来看�
 1. go get会自动下载并安装package, 并更新到go.mod和go.sum中
 2. 可以使用go get package[@version]来安装指定版本的package，不指定version时默认行为和go get package@latest一样
 3. 当version是latest时，也就是默认行为，对于有tags的package，会选取最新的tag，对于没有tags的package，则选取最新的commit
-3. version可以是vx.y.z这种形式或者直接使用commit的checksum，也可以使用分支名。当version是master时，不管package有没有打tag, 都会选择master分支的最新commit,比如：go get github.com/chromedp/chromedp@master
+3. version可以是vx.y.z这种形式，或者直接使用commit的hash，也可以使用分支名。当version是master时，不管package有没有打tag, 都会选择master分支的最新commit,比如：go get github.com/chromedp/chromedp@master
 4. go get -u可以更新package到latest版本
 
 如果我们想要添加额外的包呢? 直接使用下面指令就可以取到latest版本：
