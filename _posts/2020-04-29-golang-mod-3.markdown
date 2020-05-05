@@ -75,6 +75,7 @@ vMAJOR.MINOR.PATCH
 
 * [Go module 如何发布 v2 及以上版本？](https://blog.cyeam.com/go/2019/03/12/go-version)
 * [再探go modules：使用与细节](https://www.cnblogs.com/apocelipes/p/10295096.html)
+* [语义化版本 2.0.0](https://semver.org/lang/zh-CN/)
 
 
 

@@ -1,0 +1,162 @@
+---
+layout: post
+title: "golang的包管理工具(4)：GOPROXY 和 GOPRIVATE"
+subtitle: "GOPROXY and GOPRIVATE"
+author: "zy"
+header-img: "img/post-bg-golang.jpg"
+catalog: true
+tags:
+  - Golang
+---
+
+> "on the way."
+
+## 引言
+
+现在，几乎每个公司都会搭建自己gitlab仓库，这就是我们所说的私有仓库。在最近的工作中，我们就遇到使用go mod时，无法拉取私有仓库的问题, 这篇博文就来总结一下这些问题。
+
+## 使用HTTPS协议设置免密码提交代码
+
+##### MAC系统
+
+1. 安装“osxkeychain”工具来实现免密码访问，一般来说mac os都已经预装了这个工具：
+```
+$ git credential -osxkeychain
+# Test for the cred helper
+Usage: git credential -osxkeychain < get|store|erase >
+```
+如果回显如下，则为未安装：
+```
+git: 'credential -osxkeychain' is not a git command. See 'git --help'. 
+```
+2. 如果该工具未安装，先获取安装包：
+```
+$ git credential -osxkeychain
+# Test for the cred helper
+git: 'credential -osxkeychain' is not a git command. See 'git --help'.
+$ curl -s -o \
+https://github-media-downloads.s3.amazonaws.com/osx/git-credential-osxkeychain
+# Download the helper
+$ chmod u+x git-credential-osxkeychain
+# Fix the permissions on the file so it can be run
+```
+3. 将“osxkeychain”安装在Git的同一个目录下：
+```
+$ sudo mv git-credential-osxkeychain\
+"$(dirname $(which git))/git-credential-osxkeychain"
+# Move the helper to the path where git is installed
+Password:[enter your password]
+```
+
+4. 使用“osxkeychain”工具将Git配置成免密码模式：
+```
+$git config --global credential.helper osxkeychain
+#Set git to use the osxkeychain credential helper
+```
+配置好osxkeychain之后，第一次执行操作时会提示输入密码，输入后将由“osxkeychain”管理用户名和密码，后续再执行Git操作时将不再需要密码校验。
+
+##### Linux系统
+linux系统的配置可以参看博文：[使用HTTPS协议设置免密码提交代码](https://support.huaweicloud.com/usermanual-codehub/devcloud_hlp_00073.html#devcloud_hlp_00073__section33428900)
+
+除了文档中方法之外，我们还可以使用/.netrc来实现免token提交：
+
+```
+Companies often permit outgoing traffic only on the standard TCP ports 80 (HTTP) and 443 (HTTPS), blocking outgoing traffic on other ports, including TCP port 9418 (git) and TCP port 22 (SSH). When using HTTPS instead of HTTP, git enforces certificate validation by default, providing protection against man-in-the-middle, eavesdropping and tampering attacks. The go get command therefore uses HTTPS for safety.
+
+Git can be configured to authenticate over HTTPS or to use SSH in place of HTTPS. To authenticate over HTTPS, you can add a line to the $HOME/.netrc file that git consults:
+
+machine github.com login USERNAME password APIKEY
+```
+总结这段话就是说, 在用户根目录下的.netrc文件加上git仓库登录账号就可以了：
+```
+echo "machine 仓库地址 login 用户名 password APIKEY" > ~/.netrc
+```
+
+## 直接使用go get或者go mod tidy
+
+当我们直接使用go get .....来添加私有仓库时，经常会出现下面错误：
+
+```
+get "gitlab.com/xxx": found meta tag get.metaImport{Prefix:"gitlab.com/xxx", VCS:"git", RepoRoot:"https://gitlab.com/xxx.git"} at //gitlab.com/xxx?go-get=1
+go get gitlab.com/xxx: git ls-remote -q https://gitlab.com/xxx.git in /Users/sulin/go/pkg/mod/cache/vcs/91fae55e78195f3139c4f56af15f9b47ba7aa6ca0fa761efbd5b6e2b16d5159d: exit status 128:
+    fatal: could not read Username for 'https://gitlab.com': terminal prompts disabled
+Confirm the import path was entered correctly.
+If this is a private repository, see https://golang.org/doc/faq#git_https for additional information.
+```
+从错误信息可以明显地看出来，我们使用私有仓库时通常会配置ssh-pubkey进行鉴权，但是go get使用https而非ssh的方式来下载依赖，从而导致鉴权失败。
+
+
+## Go Proxy
+由于一些众所周知的原因，国内的开发者经常拉不到国外的依赖包，所以go官方在1.13的版本中贴心地为我们准备了代理。
+
+相关的环境变量和默认值如下：
+
+```
+GOPROXY="https://proxy.golang.org,direct"
+GOSUMDB="sum.golang.org"
+GOPRIVATE=""
+GONOPROXY=""
+GONOSUMDB=""
+```
+根据官方的说法：
+
+```
+The default setting for GOPROXY is
+"https://proxy.golang.org,direct", which means to try the
+Go module mirror run by Google and fall back to a direct connection
+if the proxy reports that it does not have the module (HTTP error 404 or 410).
+```
+
+GOPROXY指示递增和获取顺序，每个镜像源URL之间使用","来分隔，按照优先级顺序排列。GOPROXY=off 表示“禁止从互联网下载任何依赖”，GOPROXY=direct 表示“依赖一律从源站下载”。
+
+配置了go proxy之后，我们再次拉取私有仓库：
+
+```
+go get gitlab.com/xxx: module gitlab.com/xxx: reading https://goproxy.io/gitlab.com/xxx/@v/list: 403 Forbidden
+```
+这里报了403 Forbidden的error, go get通过代理服务拉取私有仓库，而代理服务当然不可能访问到私有仓库，从而出现了403错误。
+
+##### 1.12版本解决方案
+
+在1.11和1.12版本中，比较主流的解决方案是配置git强制采用ssh。
+
+这个解决方案在许多博客、问答中都可以看到:
+
+```
+git config --global url."git@gitlab.com:xxx/zz.git".insteadof "https://gitlab.com/xxx/zz.git"
+```
+
+使用了这种ssh的方案之后，我们又会遇到了另外一个问题：
+
+```
+get "gitlab.com/xxx/zz": found meta tag get.metaImport{Prefix:"gitlab.com/xxx/zz", VCS:"git", RepoRoot:"https://gitlab.com/xxx/zz.git"} at //gitlab.com/xxx/zz?go-get=1
+  verifying gitlab.com/xxx/zz@v0.0.1: gitlab.com/xxx/zz@v0.0.1: reading https://sum.golang.org/lookup/gitlab.com/xxx/zz@v0.0.1: 410 Gone
+```
+
+这个错误是因为新版本go mod会对依赖包进行checksum校验，但是私有仓库对sum.golang.org是不可见的，它当然没有办法成功执行checksum。
+
+##### GOPRIVATE
+
+好了，这篇博文的主角终于要出场了，那就是GOPRIVATE，我们可以在环境变量中这样配置：
+
+```
+export GOPRIVATE=gitlab.com/xxx
+```
+它可以声明指定域名为私有仓库，go get在处理该域名下的所有依赖时，会直接跳过GOPROXY和CHECKSUM等逻辑，从而规避掉前文遇到的所有问题。另外域名gitlab.com/xxx非常灵活，它默认是前缀匹配的，所有的gitlab.com/xxx前缀的依赖模块都会被视为private-modules，它对于企业、私有Group等有着一劳永逸的益处。
+
+## 总结
+1. go proxy主要是为了解决国内的开发者无法拉取墙外包的问题，sum db是为了增强包的安全性，但是这两个特性都在拉取私有仓库的过程出现了问题
+2. GOPRIVATE是一个新的特性，帮助我们跳过GOPROXY和CHECKSUM等逻辑
+3. 但是我们在开发的过程中还遇到了一个奇怪的问题，就是在构建docker镜像的时候，不需要配置免token登陆，也不需要配置GOPRIVATE，居然可以拉到所有私有仓库，这是个值得继续深究的地方
+
+## 引用
+* [Go填坑之将Private仓库用作module依赖](https://segmentfault.com/a/1190000021127791?utm_source=tag-newest)
+* [go get如何下载私有仓库](https://www.jianshu.com/p/e48621f71e9b)
+* [Go的包管理工具（四）：Go Module Proxy](https://juejin.im/post/5c8f9f8ef265da612c3a34b9)
+* [使用HTTPS协议设置免密码提交代码](https://support.huaweicloud.com/usermanual-codehub/devcloud_hlp_00073.html#devcloud_hlp_00073__section33428900)
+
+
+
+
+
+

@@ -207,7 +207,24 @@ func WriteChWithSelect(ch chan int) error {
         return errors.New("write time out")
     }
 }
+
 ```
+
+## 只写通道和只读通道
+在我们日常的项目中，经常会使用<-chan 和 chan<-这两种数据类型：
+
+```
+//只读通道
+func channelOnlyForReda(mes <-chan string) {
+	msg := <-mes
+}
+
+// 只写通道
+func channelF2Writer(mes chan<- string) {
+	mes <- "mynamezy"
+}
+```
+
 ## 总结
 
 1. 上文中介绍了四种管道阻塞的场景，如果我们混淆使用，很容易造成死锁
@@ -220,6 +237,7 @@ func WriteChWithSelect(ch chan int) error {
 * [Go的channel常见使用方式](https://www.jianshu.com/p/554e210bdca4)
 * [深入理解Golang之channel](https://www.lagou.com/lgeduarticle/79467.html)
 * [一招教你无阻塞读写Golang channel](https://yq.aliyun.com/articles/675968)
+* [只读通道和只写通道](https://blog.csdn.net/weixin_42255190/article/details/99052528)
 
 
 
